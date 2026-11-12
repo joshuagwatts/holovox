@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HoloVox — Online Singing Synthesizer</title>
+<meta name="description" content="A Vocaloid-style singing voice synthesizer that runs entirely in your browser. Piano roll, lyrics, formant voice — no installs, no samples.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎤</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="logo">
+    <span class="logo-mark">🎤</span>
+    <div>
+      <h1>HOLO<span>VOX</span></h1>
+      <p>online singing synthesizer</p>
+    </div>
+  </div>
+  <div class="top-actions">
+    <button id="btnExport" class="btn ghost" title="Render the song to a .wav file">⬇ Export WAV</button>
+    <a class="btn ghost" href="https://github.com/joshuagwatts/holovox" target="_blank" rel="noopener">GitHub</a>
+  </div>
+</header>
+
+<main>
+  <section class="stage panel">
+    <div class="avatar-wrap">
+      <svg id="avatar" viewBox="0 0 200 220" aria-label="Singer avatar">
+        <!-- hair back -->
+        <path id="hairBack" d="M100 12 C45 12 30 60 34 120 L44 205 L62 205 L58 120 C80 130 120 130 142 120 L138 205 L156 205 L166 120 C170 60 155 12 100 12Z"/>
+        <!-- twintails -->
+        <path id="tailL" class="tail" d="M38 60 C14 90 16 150 26 196 L44 190 C34 148 36 104 48 76Z"/>
+        <path id="tailR" class="tail" d="M162 60 C186 90 184 150 174 196 L156 190 C166 148 164 104 152 76Z"/>
+        <!-- face -->
+        <ellipse cx="100" cy="105" rx="52" ry="58" fill="#ffe3d3"/>
+        <!-- hair fringe -->
+        <path id="hairTop" d="M48 100 C44 40 70 22 100 22 C130 22 156 40 152 100 C138 66 122 58 100 58 C78 58 62 66 48 100Z"/>
+        <!-- eyes -->
+        <g id="eyes">
+          <ellipse cx="78" cy="108" rx="6.5" ry="9" fill="#263238"/>
+          <ellipse cx="122" cy="108" rx="6.5" ry="9" fill="#263238"/>
+          <circle cx="80.5" cy="104.5" r="2.4" fill="#fff"/>
+          <circle cx="124.5" cy="104.5" r="2.4" fill="#fff"/>
+        </g>
+        <!-- blush -->
+        <ellipse cx="66" cy="128" rx="9" ry="4.5" fill="#ffb3c1" opacity=".75"/>
+        <ellipse cx="134" cy="128" rx="9" ry="4.5" fill="#ffb3c1" opacity=".75"/>
+        <!-- mouth (JS animates ry) -->
+        <ellipse id="mouth" cx="100" cy="136" rx="7" ry="1.6" fill="#8e3b46"/>
+        <!-- headset mic -->
+        <path d="M148 96 C160 118 156 138 128 146" stroke="#37474f" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <circle cx="126" cy="146" r="5" fill="#37474f"/>
+        <!-- body -->
+        <path d="M64 220 C66 184 82 172 100 172 C118 172 134 184 136 220Z" fill="#37474f"/>
+        <path id="trim" d="M92 176 L100 192 L108 176 L104 220 L96 220Z"/>
+      </svg>
+      <div class="now-singing">
+        <div id="nowLyric">—</div>
+        <div id="nowNote">press play</div>
+      </div>
+    </div>
+
+    <div class="stage-controls">
+      <div class="char-row" id="charRow"></div>
+
+      <div class="transport">
+        <button id="btnPlay" class="btn play">▶ SING</button>
+        <button id="btnStop" class="btn ghost">■ Stop</button>
+        <label class="loop-toggle"><input type="checkbox" id="chkLoop" checked> Loop</label>
+      </div>
+
+      <div class="sliders">
+        <label>Tempo <b id="tempoVal">112</b><input type="range" id="rngTempo" min="60" max="180" value="112"></label>
+        <label>Vibrato <b id="vibVal">45</b><input type="range" id="rngVib" min="0" max="100" value="45"></label>
+        <label>Breath <b id="breathVal">18</b><input type="range" id="rngBreath" min="0" max="100" value="18"></label>
+        <label>Brightness <b id="brightVal">50</b><input type="range" id="rngBright" min="0" max="100" value="50"></label>
+        <label>Smooth (portamento) <b id="portaVal">35</b><input type="range" id="rngPorta" min="0" max="100" value="35"></label>
+        <label>Volume <b id="volVal">80</b><input type="range" id="rngVol" min="0" max="100" value="80"></label>
+        <label class="chk"><input type="checkbox" id="chkReverb" checked> Hall reverb</label>
+      </div>
+
+      <div class="audition">
+        <div class="audition-head">
+          <span>Audition vowel</span>
+          <div class="vowel-chips" id="vowelChips">
+            <button data-v="a" class="chip on">a</button>
+            <button data-v="i" class="chip">i</button>
+            <button data-v="u" class="chip">u</button>
+            <button data-v="e" class="chip">e</button>
+            <button data-v="o" class="chip">o</button>
+          </div>
+        </div>
+        <div class="mini-keys" id="miniKeys"></div>
+        <p class="hint">Tap a key — she sings that vowel. Then write it in the piano roll below.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel editor">
+    <div class="editor-head">
+      <h2>Piano Roll</h2>
+      <div class="editor-tools">
+        <select id="selPreset" title="Load a demo song">
+          <option value="">Load demo song…</option>
+          <option value="hoshi">★ Hoshi no Uta (original)</option>
+          <option value="twinkle">Twinkle Twinkle Little Star</option>
+          <option value="sakura">Sakura Dream (original)</option>
+        </select>
+        <button id="btnClear" class="btn ghost small">Clear</button>
+        <span class="hint">Click empty cell = add note · drag right edge = lengthen · drag note = move · right-click / double-click = delete</span>
+      </div>
+    </div>
+
+    <div class="roll-scroll" id="rollScroll">
+      <div class="roll" id="roll">
+        <div class="playhead" id="playhead"></div>
+      </div>
+    </div>
+
+    <div class="lyric-bar">
+      <label class="lyric-bulk">
+        <span>Lyrics (one syllable per note, space-separated)</span>
+        <input id="txtLyrics" type="text" placeholder="ho shi no u ta ga hi ka ru …" spellcheck="false">
+      </label>
+      <button id="btnApplyLyrics" class="btn small">Apply to notes</button>
+      <label class="lyric-sel">
+        <span>Selected note</span>
+        <input id="txtSelLyric" type="text" placeholder="—" spellcheck="false">
+      </label>
+      <span class="hint" id="lyricCount"></span>
+    </div>
+  </section>
+
+  <footer>
+    <p>HoloVox sings with <b>formant synthesis</b> — a sawtooth glottal source shaped by three tuned resonators per vowel, consonant bursts, vibrato and breath noise. 100% Web Audio, zero samples, zero servers. Your song never leaves the browser.</p>
+    <p class="tiny">An original homage to singing synthesizers like Vocaloid. Not affiliated with Yamaha or Crypton Future Media.</p>
+  </footer>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
