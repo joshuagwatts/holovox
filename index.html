@@ -99,6 +99,16 @@
     </div>
   </section>
 
+  <section class="panel words">
+    <h2>What should she sing?</h2>
+    <textarea id="txtWords" rows="2" placeholder="Type anything here… e.g. Create anything imaginable, I love you to the moon and back" spellcheck="false"></textarea>
+    <div class="words-actions">
+      <button id="btnSingWords" class="btn play">✨ Sing my words</button>
+      <button id="btnApplyWords" class="btn">Put words on my melody ↓</button>
+      <span class="hint" id="wordsMsg">Plain English — she splits it into syllables and sings every one. No phonetic spelling needed.</span>
+    </div>
+  </section>
+
   <section class="panel editor">
     <div class="editor-head">
       <h2>Piano Roll</h2>
@@ -121,13 +131,8 @@
     </div>
 
     <div class="lyric-bar">
-      <label class="lyric-bulk">
-        <span>Lyrics (one syllable per note, space-separated)</span>
-        <input id="txtLyrics" type="text" placeholder="ho shi no u ta ga hi ka ru …" spellcheck="false">
-      </label>
-      <button id="btnApplyLyrics" class="btn small">Apply to notes</button>
       <label class="lyric-sel">
-        <span>Selected note</span>
+        <span>Selected note (type a word — it splits across new notes)</span>
         <input id="txtSelLyric" type="text" placeholder="—" spellcheck="false">
       </label>
       <span class="hint" id="lyricCount"></span>
@@ -135,11 +140,12 @@
   </section>
 
   <footer>
-    <p>HoloVox sings with <b>formant synthesis</b> — a sawtooth glottal source shaped by three tuned resonators per vowel, consonant bursts, vibrato and breath noise. 100% Web Audio, zero samples, zero servers. Your song never leaves the browser.</p>
+    <p>Type plain English and HoloVox turns it into phonemes, then sings them with <b>formant synthesis</b> — a sawtooth glottal source shaped by three tuned resonators that glide through every syllable: consonants, vowel, endings and all. 100% Web Audio, zero samples, zero servers. Your words never leave the browser.</p>
     <p class="tiny">An original homage to singing synthesizers like Vocaloid. Not affiliated with Yamaha or Crypton Future Media.</p>
   </footer>
 </main>
 
+<script src="g2p.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

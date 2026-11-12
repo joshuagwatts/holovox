@@ -9,11 +9,11 @@ No installs, no samples, no servers — just open the page and she sings.
 
 ## What it does
 
-- **Piano roll editor** — click to add notes, drag the right edge to lengthen, drag notes to move them, right-click to delete. 32 steps, C3–C5, monophonic like the real thing.
-- **Lyrics per note** — type syllables (`ho shi no u ta…`) and apply them across the melody, or edit the selected note directly. Romaji syllables and English words both parse.
+- **Type anything** — write plain English in the big box and hit **✨ Sing my words**: a built-in grapheme-to-phoneme engine splits your text into syllables, generates a melody, and she sings the whole phrase. Or hit **Put words on my melody** to lay your words over a piano-roll melody you wrote. No phonetic spelling, ever.
+- **Piano roll editor** — click to add notes, drag the right edge to lengthen, drag notes to move them, right-click to delete. 96 steps, C3–C5, monophonic like the real thing. Typing a whole word on a selected note splits it across new notes automatically.
 - **Real singing synthesis** — every note is synthesized live with the source-filter model of the human voice:
   - sawtooth glottal source → three parallel bandpass **formant resonators** per vowel (a / i / u / e / o)
-  - **consonants**: fricative noise (s, sh, f, h), plosive bursts (k, t, p), nasal hums (m, n, and a standalone ん "n")
+  - **full syllables, not just vowels**: formants glide from each consonant's locus through the vowel (including diphthongs like the *i* in "shine") and into the ending — fricative noise (s, sh, f, th), plosive closures + bursts (k, t, p), nasal murmurs (m, n, -ng), r/l-coloured endings
   - **vibrato** that fades in over sustained notes, **portamento** glides between legato notes, breath noise, and a singer's-formant presence boost
 - **3 original voices** — AOI (bright idol), REN (soft & breathy), KAI (deep & smooth), each with its own vocal-tract scale and an animated avatar whose mouth follows the vowel.
 - **Audition keyboard** — tap keys to hear a voice sing any vowel before you write it.
