@@ -62,6 +62,7 @@ const params = () => ({
   bright: 0.75 + (+$("#rngBright").value / 100) * 0.55,
   porta: +$("#rngPorta").value / 100,
   vol: +$("#rngVol").value / 100,
+  human: ($("#rngHuman") ? +$("#rngHuman").value : 70) / 100,
   reverb: $("#chkReverb").checked,
   loop: $("#chkLoop").checked,
 });
@@ -97,6 +98,35 @@ function makeImpulse(ctx, seconds = 1.8, decay = 2.6) {
     const d = buf.getChannelData(ch);
     for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
   }
+  return buf;
+}
+/* Glottal pulse train (LF-model style): one cycle of vocal-fold flow,
+   differentiated — this is what a throat produces, and it's the single
+   biggest difference between "synth buzz" and "voice". */
+const glottalCache = new WeakMap();
+function makeGlottal(ctx) {
+  if (glottalCache.has(ctx)) return glottalCache.get(ctx);
+  const sr = ctx.sampleRate, len = Math.round(sr / 80); // 80 Hz base cycle
+  const flow = new Float32Array(len);
+  const Tp = 0.38, Tc = 0.60; // peak time / closure time (open quotient ~0.6)
+  for (let i = 0; i < len; i++) {
+    const ph = i / len;
+    if (ph < Tp) { const s = Math.sin(0.5 * Math.PI * ph / Tp); flow[i] = s * s; }
+    else if (ph < Tc) { const q = (ph - Tp) / (Tc - Tp); flow[i] = Math.pow(Math.cos(0.5 * Math.PI * q), 1.5) * Math.exp(-1.1 * q); }
+    else flow[i] = 0;
+  }
+  const d = new Float32Array(len);
+  let peak = 0;
+  for (let i = 0; i < len; i++) { d[i] = flow[i] - flow[(i - 1 + len) % len]; if (Math.abs(d[i]) > peak) peak = Math.abs(d[i]); }
+  const sm = new Float32Array(len); // gentle 3-tap smoothing, twice
+  for (let pass = 0; pass < 2; pass++) {
+    const srcArr = pass ? sm : d;
+    for (let i = 0; i < len; i++) sm[i] = (srcArr[(i - 1 + len) % len] + srcArr[i] * 2 + srcArr[(i + 1) % len]) / 4;
+  }
+  const buf = ctx.createBuffer(1, len, sr);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) ch[i] = sm[i] / (peak || 1);
+  glottalCache.set(ctx, buf);
   return buf;
 }
 function ensureCtx() {
@@ -151,19 +181,34 @@ function singSyllable(ctx, dest, o) {
   if (coDur > maxCo) { const f = maxCo / coDur; coDur = maxCo; coda._f = f; }
   const vStart = t + onDur, vDur = Math.max(0.05, dur - onDur - coDur), vEnd = vStart + vDur;
 
-  /* --- glottal source: two detuned saws for a thicker buzz --- */
+  /* --- glottal source: looped vocal-fold pulse, not a sawtooth --- */
+  const gbuf = makeGlottal(ctx);
+  const baseHz = ctx.sampleRate / gbuf.length;
+  const rate = f => f / baseHz;
   const portaTime = (o.fromMidi != null) ? 0.02 + p.porta * 0.16 : 0.012;
+  const tune = (Math.random() * 10 - 5) * p.human; // per-note tuning imperfection
   const wirePitch = node => {
     if (o.fromMidi != null && portaTime > 0.015) {
-      node.frequency.setValueAtTime(mtof(o.fromMidi), t);
-      node.frequency.exponentialRampToValueAtTime(freq, t + portaTime);
-    } else {
-      node.frequency.setValueAtTime(freq * 0.985, t);
-      node.frequency.exponentialRampToValueAtTime(freq, t + 0.03);
+      node.playbackRate.setValueAtTime(rate(mtof(o.fromMidi)), t);
+      node.playbackRate.exponentialRampToValueAtTime(rate(freq), t + portaTime);
+    } else { // human scoop into the note
+      node.playbackRate.setValueAtTime(rate(freq * (1 - 0.03 * p.human - 0.005)), t);
+      node.playbackRate.exponentialRampToValueAtTime(rate(freq), t + 0.03 + 0.03 * p.human);
     }
   };
-  const osc = ctx.createOscillator(); osc.type = "sawtooth"; wirePitch(osc);
-  const osc2 = ctx.createOscillator(); osc2.type = "sawtooth"; wirePitch(osc2); osc2.detune.value = 5;
+  const mkSrc = det => {
+    const s = ctx.createBufferSource(); s.buffer = gbuf; s.loop = true; s.detune.value = det;
+    wirePitch(s); return s;
+  };
+  const osc = mkSrc(tune), osc2 = mkSrc(tune + 4);
+  // phrase-final pitch fall (voices droop at the end of a note that ends a phrase)
+  if (!o.legatoOut && p.human > 0.02) {
+    [osc, osc2].forEach(s => {
+      const base = s.detune.value;
+      s.detune.setValueAtTime(base, t + dur * 0.72);
+      s.detune.linearRampToValueAtTime(base - 16 * p.human, t + dur);
+    });
+  }
   if (p.vib > 0.01) {
     const lfo = ctx.createOscillator(); lfo.frequency.value = 4.6 + p.vib * 2.2;
     const lg = ctx.createGain();
@@ -189,7 +234,24 @@ function singSyllable(ctx, dest, o) {
   };
   osc.connect(env);
   const g2 = ctx.createGain(); g2.gain.value = 0.45; osc2.connect(g2); g2.connect(env);
-  env.connect(artic);
+  /* shimmer: slow random loudness wobble between env and articulation */
+  const shim = ctx.createGain(); shim.gain.value = 1;
+  env.connect(shim); shim.connect(artic);
+  /* jitter + shimmer drivers: lowpassed noise = a slow random walk,
+     the micro-imperfection that makes a voice feel alive */
+  if (p.human > 0.02) {
+    const jSrc = ctx.createBufferSource(); jSrc.buffer = makeNoise(ctx); jSrc.loop = true;
+    const jLp = ctx.createBiquadFilter(); jLp.type = "lowpass"; jLp.frequency.value = 13;
+    const jG = ctx.createGain(); jG.gain.value = 8 * p.human; // ±cents of pitch jitter
+    jSrc.connect(jLp); jLp.connect(jG); jG.connect(osc.detune); jG.connect(osc2.detune);
+    const sSrc = ctx.createBufferSource(); sSrc.buffer = makeNoise(ctx); sSrc.loop = true;
+    sSrc.playbackRate.value = 0.7;
+    const sLp = ctx.createBiquadFilter(); sLp.type = "lowpass"; sLp.frequency.value = 7;
+    const sG = ctx.createGain(); sG.gain.value = 0.045 * p.human;
+    sSrc.connect(sLp); sLp.connect(sG); sG.connect(shim.gain);
+    jSrc.start(t); jSrc.stop(t + dur + 0.1);
+    sSrc.start(t); sSrc.stop(t + dur + 0.1);
+  }
 
   /* nasal murmur layer */
   const mOsc = ctx.createOscillator(); mOsc.type = "sine"; mOsc.frequency.value = freq;
@@ -240,7 +302,12 @@ function singSyllable(ctx, dest, o) {
   const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 5200; lp.Q.value = 0.4;
   const singer = ctx.createBiquadFilter(); singer.type = "peaking";
   singer.frequency.value = 3200 * scale; singer.Q.value = 1.1; singer.gain.value = 3.5;
-  bus.connect(singer); singer.connect(lp); lp.connect(dest);
+  /* a whisper of soft-clip grit — vocal folds collide, synths don't */
+  const grit = ctx.createWaveShaper();
+  const curve = new Float32Array(256);
+  for (let i = 0; i < 256; i++) { const x = i / 127.5 - 1; curve[i] = Math.tanh(1.7 * x) / Math.tanh(1.7); }
+  grit.curve = curve; grit.oversample = "2x";
+  bus.connect(grit); grit.connect(singer); singer.connect(lp); lp.connect(dest);
 
   /* harmonic body: lowpassed source under the formants so the voice
      buzzes like a voice instead of ringing like three sine beeps */
@@ -278,17 +345,23 @@ function singSyllable(ctx, dest, o) {
     artic.connect(bp); bp.connect(fg); fg.connect(bus);
   }
 
-  /* breath */
+  /* breath — pulsed at the glottal rate, like real aspiration noise:
+     air escapes most when the folds are open, so breathiness that
+     throbs with the pitch reads as a throat, not a noise machine */
   if (p.breath > 0.01) {
     const nsrc = ctx.createBufferSource(); nsrc.buffer = makeNoise(ctx); nsrc.loop = true;
     const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = t1[1] * scale; bp.Q.value = 1.4;
-    const ng = ctx.createGain(); ng.gain.value = p.breath * 0.15;
     const nenv = ctx.createGain();
     nenv.gain.setValueAtTime(0, vStart);
     nenv.gain.linearRampToValueAtTime(1, vStart + 0.04);
     nenv.gain.linearRampToValueAtTime(0, vEnd);
-    nsrc.connect(bp); bp.connect(ng); ng.connect(nenv); nenv.connect(bus);
+    const bGain = ctx.createGain(); bGain.gain.value = p.breath * 0.1;
+    const bOsc = ctx.createOscillator(); bOsc.type = "sine"; bOsc.frequency.value = freq;
+    const bScale = ctx.createGain(); bScale.gain.value = p.breath * 0.1 * (0.4 + 0.6 * p.human);
+    bOsc.connect(bScale); bScale.connect(bGain.gain);
+    nsrc.connect(bp); bp.connect(nenv); nenv.connect(bGain); bGain.connect(bus);
     nsrc.start(vStart); nsrc.stop(vEnd + 0.05);
+    bOsc.start(vStart); bOsc.stop(vEnd + 0.05);
   }
   osc.start(t); osc.stop(t + dur + 0.1);
   osc2.start(t); osc2.stop(t + dur + 0.1);
@@ -304,8 +377,10 @@ function scheduleStep(step, when) {
     if (n.step !== step) continue;
     const prev = sorted.filter(x => x.step + x.len <= n.step).pop();
     const legato = prev && prev.step + prev.len === n.step;
+    const nxt = sorted.find(x => x.step >= n.step + n.len);
     singSyllable(AC, master, {
       midi: n.midi, fromMidi: legato ? prev.midi : null,
+      legatoOut: !!nxt && nxt.step === n.step + n.len,
       t: when, dur: n.len * sd * 0.98, phon: notePhon(n), char: character, p,
     });
   }
@@ -628,6 +703,7 @@ function syncLabels() {
   $("#brightVal").textContent = $("#rngBright").value;
   $("#portaVal").textContent = $("#rngPorta").value;
   $("#volVal").textContent = $("#rngVol").value;
+  if ($("#rngHuman")) $("#humanVal").textContent = $("#rngHuman").value;
 }
 document.querySelectorAll(".sliders input").forEach(i => i.addEventListener("input", syncLabels));
 syncLabels();
@@ -697,9 +773,10 @@ $("#btnExport").addEventListener("click", async () => {
     }
     const sorted = sortedNotes();
     sorted.forEach((n, i) => {
-      const prev = sorted[i - 1];
+      const prev = sorted[i - 1], next = sorted[i + 1];
       const legato = prev && prev.step + prev.len === n.step;
       singSyllable(off, mst, { midi: n.midi, fromMidi: legato ? prev.midi : null,
+        legatoOut: !!next && next.step === n.step + n.len,
         t: 0.05 + n.step * sd, dur: n.len * sd * 0.98, phon: notePhon(n), char: character, p });
     });
     const rendered = await off.startRendering();
