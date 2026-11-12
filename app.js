@@ -28,14 +28,14 @@ const vowelOpen = ph => DIPHTHONG[ph] ? PV[DIPHTHONG[ph][0]].open : (PV[ph] ? PV
 
 const CONS = {
   P:{k:"stop",v:0}, B:{k:"stop",v:1}, T:{k:"stop",v:0}, D:{k:"stop",v:1}, K:{k:"stop",v:0}, G:{k:"stop",v:1},
-  F:{k:"fric",f:5200,v:0}, V:{k:"fric",f:4200,v:1}, S:{k:"fric",f:6800,v:0}, Z:{k:"fric",f:5500,v:1},
-  SH:{k:"fric",f:3000,v:0}, ZH:{k:"fric",f:2800,v:1}, TH:{k:"fric",f:6000,v:0,g:0.45}, DH:{k:"fric",f:5000,v:1,g:0.45},
-  H:{k:"fric",f:1800,v:0,g:0.6},
+  F:{k:"fric",f:5200,v:0,g:0.5}, V:{k:"fric",f:4200,v:1,g:0.42}, S:{k:"fric",f:6800,v:0,g:0.55}, Z:{k:"fric",f:5500,v:1,g:0.42},
+  SH:{k:"fric",f:3000,v:0,g:0.5}, ZH:{k:"fric",f:2800,v:1,g:0.4}, TH:{k:"fric",f:6000,v:0,g:0.42}, DH:{k:"fric",f:5000,v:1,g:0.42},
+  H:{k:"fric",f:1800,v:0,g:0.55},
   CH:{k:"affr",f:3000,v:0}, JH:{k:"affr",f:2800,v:1},
   M:{k:"nasal"}, N:{k:"nasal"}, NG:{k:"nasal"},
   L:{k:"liquid"}, R:{k:"liquid"}, W:{k:"glide"}, Y:{k:"glide"},
 };
-const consDur = c => ({ stop: 0.055, fric: 0.075, affr: 0.095, nasal: 0.065, liquid: 0.055, glide: 0.05 })[CONS[c].k] || 0.05;
+const consDur = c => ({ stop: 0.06, fric: 0.09, affr: 0.11, nasal: 0.07, liquid: 0.055, glide: 0.05 })[CONS[c].k] || 0.05;
 
 const CHARACTERS = [
   { id: "aoi", name: "AOI", desc: "bright · clear · classic idol", color: "#2ee6c8", scale: 1.09, breath: 14 },
@@ -151,23 +151,26 @@ function singSyllable(ctx, dest, o) {
   if (coDur > maxCo) { const f = maxCo / coDur; coDur = maxCo; coda._f = f; }
   const vStart = t + onDur, vDur = Math.max(0.05, dur - onDur - coDur), vEnd = vStart + vDur;
 
-  /* --- glottal source --- */
-  const osc = ctx.createOscillator(); osc.type = "sawtooth";
+  /* --- glottal source: two detuned saws for a thicker buzz --- */
   const portaTime = (o.fromMidi != null) ? 0.02 + p.porta * 0.16 : 0.012;
-  if (o.fromMidi != null && portaTime > 0.015) {
-    osc.frequency.setValueAtTime(mtof(o.fromMidi), t);
-    osc.frequency.exponentialRampToValueAtTime(freq, t + portaTime);
-  } else {
-    osc.frequency.setValueAtTime(freq * 0.985, t);
-    osc.frequency.exponentialRampToValueAtTime(freq, t + 0.03);
-  }
+  const wirePitch = node => {
+    if (o.fromMidi != null && portaTime > 0.015) {
+      node.frequency.setValueAtTime(mtof(o.fromMidi), t);
+      node.frequency.exponentialRampToValueAtTime(freq, t + portaTime);
+    } else {
+      node.frequency.setValueAtTime(freq * 0.985, t);
+      node.frequency.exponentialRampToValueAtTime(freq, t + 0.03);
+    }
+  };
+  const osc = ctx.createOscillator(); osc.type = "sawtooth"; wirePitch(osc);
+  const osc2 = ctx.createOscillator(); osc2.type = "sawtooth"; wirePitch(osc2); osc2.detune.value = 5;
   if (p.vib > 0.01) {
     const lfo = ctx.createOscillator(); lfo.frequency.value = 4.6 + p.vib * 2.2;
     const lg = ctx.createGain();
     lg.gain.setValueAtTime(0, t);
     lg.gain.linearRampToValueAtTime(0, vStart + vDur * 0.3);
     lg.gain.linearRampToValueAtTime(p.vib * 55, vStart + vDur * 0.8);
-    lfo.connect(lg); lg.connect(osc.detune);
+    lfo.connect(lg); lg.connect(osc.detune); lg.connect(osc2.detune);
     lfo.start(t); lfo.stop(t + dur + 0.1);
   }
 
@@ -184,7 +187,9 @@ function singSyllable(ctx, dest, o) {
     artic.gain.setValueAtTime(val, Math.max(t, t1));
     artic.gain.linearRampToValueAtTime(1, Math.min(t + dur, t1 + 0.012));
   };
-  osc.connect(env); env.connect(artic);
+  osc.connect(env);
+  const g2 = ctx.createGain(); g2.gain.value = 0.45; osc2.connect(g2); g2.connect(env);
+  env.connect(artic);
 
   /* nasal murmur layer */
   const mOsc = ctx.createOscillator(); mOsc.type = "sine"; mOsc.frequency.value = freq;
@@ -203,9 +208,9 @@ function singSyllable(ctx, dest, o) {
   const onF = onset._f || 1;
   for (const c of onset) {
     const info = CONS[c], d = consDur(c) * onF;
-    if (info.k === "fric") { addNoise(ctx, dest, ct, d, info.f, (info.g || 0.3) * p.vol * (info.v ? 0.6 : 1)); if (!info.v) dip(ct, ct + d * 0.9, 0.35); else dip(ct, ct + d * 0.9, 0.7); }
-    else if (info.k === "affr") { dip(ct, ct + d * 0.35, 0.08); addNoise(ctx, dest, ct + d * 0.35, d * 0.65, info.f, 0.3 * p.vol); dip(ct + d * 0.35, ct + d, 0.35); }
-    else if (info.k === "stop") { dip(ct, ct + d * 0.72, 0.07); addNoise(ctx, dest, ct + d * 0.72, 0.018, 2600, (info.v ? 0.12 : 0.3) * p.vol, 0.7); }
+    if (info.k === "fric") { addNoise(ctx, dest, ct, d, info.f, (info.g || 0.5) * p.vol * (info.v ? 0.8 : 1.2)); if (!info.v) dip(ct, ct + d * 0.9, 0.35); else dip(ct, ct + d * 0.9, 0.7); }
+    else if (info.k === "affr") { dip(ct, ct + d * 0.35, 0.08); addNoise(ctx, dest, ct + d * 0.35, d * 0.65, info.f, 0.5 * p.vol); dip(ct + d * 0.35, ct + d, 0.35); }
+    else if (info.k === "stop") { dip(ct, ct + d * 0.72, 0.07); addNoise(ctx, dest, ct + d * 0.72, 0.02, 2600, (info.v ? 0.2 : 0.5) * p.vol, 0.7); if (!info.v) addNoise(ctx, dest, ct + d * 0.72 + 0.02, 0.032, 1600, 0.17 * p.vol, 0.8); }
     else if (info.k === "nasal") { murmur(ct, ct + d); dip(ct, ct + d, 0.8); }
     ct += d;
   }
@@ -213,8 +218,8 @@ function singSyllable(ctx, dest, o) {
   const coF = coda._f || 1;
   for (const c of coda) {
     const info = CONS[c], d = consDur(c) * 0.85 * coF;
-    if (info.k === "fric") { addNoise(ctx, dest, kt, d, info.f, (info.g || 0.28) * p.vol); dip(kt, kt + d, 0.5); }
-    else if (info.k === "affr") { addNoise(ctx, dest, kt, d * 0.7, info.f, 0.26 * p.vol); }
+    if (info.k === "fric") { addNoise(ctx, dest, kt, d, info.f, (info.g || 0.5) * p.vol * 1.1); dip(kt, kt + d, 0.5); }
+    else if (info.k === "affr") { addNoise(ctx, dest, kt, d * 0.7, info.f, 0.45 * p.vol); }
     else if (info.k === "stop") { dip(kt + d * 0.4, kt + d, 0.07); }
     else if (info.k === "nasal") { murmur(kt, kt + d); dip(kt, kt + d, 0.65); }
     kt += d;
@@ -234,13 +239,26 @@ function singSyllable(ctx, dest, o) {
   const bus = ctx.createGain();
   const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 5200; lp.Q.value = 0.4;
   const singer = ctx.createBiquadFilter(); singer.type = "peaking";
-  singer.frequency.value = 3200 * scale; singer.Q.value = 1.1; singer.gain.value = 5;
+  singer.frequency.value = 3200 * scale; singer.Q.value = 1.1; singer.gain.value = 3.5;
   bus.connect(singer); singer.connect(lp); lp.connect(dest);
 
-  const FG = [1.0, 0.62, 0.3];
+  /* harmonic body: lowpassed source under the formants so the voice
+     buzzes like a voice instead of ringing like three sine beeps */
+  const bodyLp = ctx.createBiquadFilter(); bodyLp.type = "lowpass"; bodyLp.frequency.value = 750;
+  const bodyG = ctx.createGain(); bodyG.gain.value = 0.32;
+  artic.connect(bodyLp); bodyLp.connect(bodyG); bodyG.connect(bus);
+  /* fixed presence formants F4/F5 */
+  [[3400, 0.16], [4500, 0.09]].forEach(([ff, gg]) => {
+    const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = ff * scale; bp.Q.value = 8;
+    const fg = ctx.createGain(); fg.gain.value = gg;
+    artic.connect(bp); bp.connect(fg); fg.connect(bus);
+  });
+
+  const FG = [1.0, 0.7, 0.42];
+  const FQ = [3.4, 4.8, 6.5];
   for (let fi = 0; fi < 3; fi++) {
     const bp = ctx.createBiquadFilter(); bp.type = "bandpass";
-    bp.Q.value = fi === 0 ? 5.5 : 7.5;
+    bp.Q.value = FQ[fi];
     const pts = [];
     pts.push([t, start[fi] * scale]);
     pts.push([vStart + 0.045, t1[fi] * scale]);
@@ -273,6 +291,7 @@ function singSyllable(ctx, dest, o) {
     nsrc.start(vStart); nsrc.stop(vEnd + 0.05);
   }
   osc.start(t); osc.stop(t + dur + 0.1);
+  osc2.start(t); osc2.stop(t + dur + 0.1);
 }
 
 /* ================= transport / scheduler ================= */

@@ -85,6 +85,11 @@ M("say","S EY"); M("tell","T EH L"); M("call","K AO L"); M("name","N EY M"); M("
 M("way","W EY"); M("play","P L EY"); M("time","T AY M"); M("eyes","AY Z"); M("eye","AY");
 M("goodbye","G UH D B AY"); W("goodbye",[["good","G UH D"],["bye","B AY"]]);
 M("hi","H AY");
+W("holowatts",[["ho","H OW"],["lo","L OW"],["watts","W AA T S"]]);
+W("holovox",[["ho","H OW"],["lo","L OW"],["vox","V AA K S"]]);
+W("holo",[["ho","H OW"],["lo","L OW"]]);
+M("watts","W AA T S");
+W("joshua",[["josh","JH AA SH"],["u","UW"],["a","AH"]]);
 M("butterfly","B AH T ER F L AY"); W("butterfly",[["but","B AH T"],["ter","T ER"],["fly","F L AY"]]);
 M("could","K UH D"); M("would","W UH D"); M("should","SH UH D"); M("through","TH R UW");
 M("though","DH OW"); M("thought","TH AO T"); M("people","P IY P AH L"); W("people",[["peo","P IY"],["ple","P AH L"]]);
@@ -221,6 +226,7 @@ function groupSyllables(word, phons) {
       if (codaPrev.length && syls.length) syls[syls.length - 1].coda = codaPrev;
     }
     const syl = { onset, vowel: phons[nIdx].ph, coda: [], word,
+                  _vletter: word[phons[nIdx].start] || "",
                   _s: phons[onsetStart] ? phons[onsetStart].start : phons[nIdx].start,
                   _e: phons[nIdx].end };
     syls.push(syl);
@@ -228,6 +234,8 @@ function groupSyllables(word, phons) {
   });
   const tail = phons.slice(prevEnd).map(p => p.ph);
   if (tail.length) { syls[syls.length - 1].coda = tail; syls[syls.length - 1]._e = phons[phons.length - 1].end; }
+  // open-syllable O says "oh": ho-lo, pho-to, so-lo, ro-bot (coda-less AA from letter o -> OW)
+  syls.forEach(s => { if (s.vowel === "AA" && s._vletter === "o" && s.coda.length === 0) s.vowel = "OW"; delete s._vletter; });
   // display fragments from letter spans
   syls.forEach((s, idx) => {
     const start = idx === 0 ? 0 : s._s;
